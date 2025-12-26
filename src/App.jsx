@@ -4,7 +4,10 @@ import {
   API_KEY_STORAGE_KEY, 
   PROFILE_STORAGE_KEY, 
   CHAT_STORAGE_KEY, 
-  defaultProfile 
+  defaultProfile,
+  CLAUDE_API_URL,
+  CLAUDE_API_VERSION,
+  CLAUDE_MODEL
 } from './utils/constants.js';
 import { portfolioData } from './data/portfolio.js';
 import { callClaude, getStoredApiKey } from './utils/api.js';
@@ -171,6 +174,17 @@ function App() {
   };
 
   const handleTestKey = async () => {
+    if (!apiKeyInput.trim()) {
+      setApiKeyError('Please enter your API key');
+      return;
+    }
+
+    // Basic format validation
+    if (!apiKeyInput.trim().startsWith('sk-ant-')) {
+      setApiKeyError('API key should start with "sk-ant-"');
+      return;
+    }
+
     setTestingKey(true);
     setApiKeyError('');
     try {
@@ -196,12 +210,27 @@ function App() {
       });
 
       if (!res.ok) {
-        throw new Error('Invalid API key');
+        let errorMessage = 'Invalid API key. Please check and try again.';
+        try {
+          const errorData = await res.json();
+          if (errorData?.error?.message) {
+            errorMessage = errorData.error.message;
+          } else if (res.status === 401) {
+            errorMessage = 'Invalid API key. Please check and try again.';
+          } else if (res.status === 403) {
+            errorMessage = 'API key does not have permission to access this resource.';
+          } else if (res.status === 429) {
+            errorMessage = 'Rate limit exceeded. Please try again later.';
+          }
+        } catch {
+          // Use default error message
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await res.json();
-      if (!data || !Array.isArray(data.content)) {
-        throw new Error('Unexpected response');
+      if (!data || !data.content || !Array.isArray(data.content)) {
+        throw new Error('Unexpected response from API');
       }
 
       window.localStorage.setItem(API_KEY_STORAGE_KEY, apiKeyInput.trim());
@@ -209,9 +238,9 @@ function App() {
       setApiKeyError('');
       setShowSidebar(false);
     } catch (err) {
-      console.error(err);
+      console.error('API key test error:', err);
       setHasValidKey(false);
-      setApiKeyError('Invalid API key. Please check and try again.');
+      setApiKeyError(err.message || 'Invalid API key. Please check and try again.');
     } finally {
       setTestingKey(false);
     }
